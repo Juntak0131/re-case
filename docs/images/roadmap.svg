@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="370" viewBox="0 0 1000 370">
+<style>
+.k{font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕','Noto Sans KR','Noto Sans CJK KR',sans-serif}
+.m{font-family:Menlo,Consolas,'Courier New',monospace}
+.wk{font-size:13px;font-weight:700;fill:#1b2230}
+.dt{font-size:10.5px;fill:#8b95a7}
+.bar{font-size:13px;font-weight:700;fill:#fff}
+.g1{font-size:12.5px;font-weight:700;fill:#1b2230}
+.g2{font-size:11.5px;fill:#6b7385}
+.card{fill:#fff;stroke:#e3ddd0}
+</style>
+<rect x="0.5" y="0.5" width="999" height="369" rx="18" fill="#f8f6f1" stroke="#e7e2d6"/>
+<text x="40" y="46" class="m" font-size="12" fill="#c8372d" letter-spacing="2">ROADMAP</text>
+<text x="40" y="82" class="k" font-size="26" font-weight="700" fill="#1b2230">개발 일정 한눈에 보기</text>
+<text x="40" y="108" class="k" font-size="14" fill="#6b7385">2026.09.29 – 12.02 · 7주 개발 → 11/17 최종 발표 → 12/2 경진대회</text>
+
+<g stroke="#ebe5d8">
+<line x1="136" y1="132" x2="136" y2="300"/><line x1="232" y1="132" x2="232" y2="300"/><line x1="328" y1="132" x2="328" y2="300"/><line x1="424" y1="132" x2="424" y2="300"/><line x1="520" y1="132" x2="520" y2="300"/><line x1="616" y1="132" x2="616" y2="300"/><line x1="712" y1="132" x2="712" y2="300"/><line x1="800" y1="132" x2="800" y2="300"/>
+</g>
+
+<g class="k" text-anchor="middle">
+<text x="88" y="148" class="wk">1주차</text><text x="88" y="166" class="m dt">9/29–10/5</text>
+<text x="184" y="148" class="wk">2주차</text><text x="184" y="166" class="m dt">10/6–10/12</text>
+<text x="280" y="148" class="wk">3주차</text><text x="280" y="166" class="m dt">10/13–10/19</text>
+<text x="376" y="148" class="wk">4주차</text><text x="376" y="166" class="m dt">10/20–10/26</text>
+<text x="472" y="148" class="wk">5주차</text><text x="472" y="166" class="m dt">10/27–11/2</text>
+<text x="568" y="148" class="wk">6주차</text><text x="568" y="166" class="m dt">11/3–11/9</text>
+<text x="664" y="148" class="wk">7주차</text><text x="664" y="166" class="m dt">11/10–11/16</text>
+<text x="756" y="148" class="wk" fill="#c8372d">발표</text><text x="756" y="166" class="m dt">11/17</text>
+<text x="880" y="148" class="wk">이후</text><text x="880" y="166" class="m dt">11/18–12/2</text>
+
+<rect x="43" y="180" width="186" height="32" rx="8" fill="#3b7ddd"/><text x="136" y="201" class="bar">기획 · 검증</text>
+<rect x="235" y="180" width="282" height="32" rx="8" fill="#7c5ce0"/><text x="376" y="201" class="bar">구현</text>
+<rect x="523" y="180" width="90" height="32" rx="8" fill="#e07b24"/><text x="568" y="201" class="bar">테스트</text>
+<rect x="619" y="180" width="90" height="32" rx="8" fill="#1f9d72"/><text x="664" y="201" class="bar">발표 준비</text>
+<rect x="715" y="180" width="82" height="32" rx="8" fill="#c8372d"/><text x="756" y="201" class="bar">발표</text>
+<rect x="803" y="180" width="154" height="32" rx="8" fill="#8b95a7"/><text x="880" y="201" class="bar">경진대회 대비</text>
+
+<rect x="44" y="224" width="88" height="72" rx="10" class="card"/><text x="88" y="254" class="g1">주제 선정</text><text x="88" y="275" class="g2">요구사항 정의</text>
+<rect x="140" y="224" width="88" height="72" rx="10" class="card"/><text x="184" y="254" class="g1">핵심 AI</text><text x="184" y="275" class="g2">로직 검증</text>
+<rect x="236" y="224" width="88" height="72" rx="10" class="card"/><text x="280" y="254" class="g1">서버 구축</text><text x="280" y="275" class="g2">FastAPI</text>
+<rect x="332" y="224" width="88" height="72" rx="10" class="card"/><text x="376" y="254" class="g1">화면 구현</text><text x="376" y="275" class="g2">React</text>
+<rect x="428" y="224" width="88" height="72" rx="10" class="card"/><text x="472" y="254" class="g1">기능 완성</text><text x="472" y="275" class="g2">API 연동</text>
+<rect x="524" y="224" width="88" height="72" rx="10" class="card"/><text x="568" y="254" class="g1">테스트</text><text x="568" y="275" class="g2">결과물 완성</text>
+<rect x="620" y="224" width="88" height="72" rx="10" class="card"/><text x="664" y="254" class="g1">발표 자료</text><text x="664" y="275" class="g2">시연 영상</text>
+<rect x="716" y="224" width="80" height="72" rx="10" fill="#fbecea" stroke="#f0c4be"/><text x="756" y="254" class="g1" fill="#a12a21">최종 발표</text><text x="756" y="275" class="g2">5분 · 시연</text>
+<rect x="804" y="224" width="152" height="72" rx="10" class="card"/><text x="880" y="254" class="g1">서류심사 통과 시</text><text x="880" y="275" class="g2">경진대회 발표</text>
+</g>
+
+<line x1="40" y1="322" x2="960" y2="322" stroke="#d9d3c6" stroke-width="2"/>
+<rect x="227" y="317" width="10" height="10" fill="#3b7ddd" transform="rotate(45 232 322)"/>
+<rect x="611" y="317" width="10" height="10" fill="#e07b24" transform="rotate(45 616 322)"/>
+<rect x="751" y="317" width="10" height="10" fill="#c8372d" transform="rotate(45 756 322)"/>
+<rect x="935" y="317" width="10" height="10" fill="#8b95a7" transform="rotate(45 940 322)"/>
+<g class="k" font-size="11.5" fill="#4a5262">
+<text x="232" y="348" text-anchor="middle"><tspan font-weight="700">10/12</tspan> AI 검증</text>
+<text x="616" y="348" text-anchor="middle"><tspan font-weight="700">11/9</tspan> 결과물 완성</text>
+<text x="756" y="348" text-anchor="middle" fill="#a12a21"><tspan font-weight="700">11/17</tspan> 최종 발표</text>
+<text x="960" y="348" text-anchor="end"><tspan font-weight="700">12/2</tspan> 경진대회</text>
+</g>
+</svg>
