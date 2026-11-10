@@ -7,7 +7,7 @@ const SOURCE = {
 }
 const STAMP = { YES: 'yes', NO: 'no', IRRELEVANT: 'irr' }
 
-export default function Result({ game, onHome, onReplay }) {
+export default function Result({ game, detective, onHome, onReplay }) {
   const r = game.result
   const c = game.case
   const decisive = new Set(game.history.filter((e) => e.keys.length).map((e) => e.n))
@@ -15,7 +15,7 @@ export default function Result({ game, onHome, onReplay }) {
 
   return (
     <div className="result">
-      <header className="result-top">
+      <header className="page-top">
         <button className="logo-btn" onClick={onHome} title="사건 목록으로">
           <Logo />
         </button>
@@ -24,7 +24,11 @@ export default function Result({ game, onHome, onReplay }) {
       <main className="result-main">
         <section className="verdict-card paper">
           <span className="closed-stamp">사건 종결</span>
-          <p className="modal-kicker">No.{c.number} · {c.title}</p>
+          <p className="modal-kicker">
+            수사 결과 보고서 · 사건번호 {c.number}
+          </p>
+          <p className="report-case">{c.title}</p>
+          <p className="report-by">담당 수사관 {detective || '미등록'}</p>
           <div className="score">
             <b>{r.score}</b>
             <span>점</span>
@@ -87,7 +91,7 @@ export default function Result({ game, onHome, onReplay }) {
           <p className="epilogue">{r.epilogue}</p>
         </section>
 
-        <FictionNote motif={r.motif} compact />
+        <FictionNote kind={r.kind} basis={r.basis} solved={r.solved} region={r.region} compact />
 
         {r.explanation && (
           <section className="result-block">
@@ -107,7 +111,7 @@ export default function Result({ game, onHome, onReplay }) {
                   <span className="qn">Q{e.n}</span>
                   <span className="rq">{e.question}</span>
                   <span className={`stamp sm ${STAMP[e.answer]}`}>{e.label}</span>
-                  {decisive.has(e.n) && <span className="tag">결정적 질문</span>}
+                  {decisive.has(e.n) && <span className="tag-dec">결정적 질문</span>}
                 </li>
               ))}
             </ol>

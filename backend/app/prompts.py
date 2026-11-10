@@ -48,13 +48,29 @@ GRADE_RULES = """너는 미제사건 추리 게임 'RE:CASE'의 채점관이다.
 
 def _case_block(case: dict) -> str:
     t = case["truth"]
-    people = "\n".join(f"- {p['id']} {p['name']} ({p['age']}세, {p['role']}): {p['desc']}" for p in case["people"])
-    evidence = "\n".join(f"- {e['id']} {e['title']}: {e['body']}" for e in case["evidence"])
+    def person(p):
+        age = f"{p['age']}세, " if p.get("age") else ""
+        tag = " [가상 인물]" if p.get("fictional") else ""
+        return f"- {p['id']} {p['name']} ({age}{p['role']}){tag}: {p['desc']}"
+
+    def clue(e):
+        tag = " [실제 기록]" if e.get("real") is True else " [가상 단서]" if e.get("real") is False else ""
+        return f"- {e['id']} {e['title']}{tag}: {e['body']}"
+
+    people = "\n".join(person(p) for p in case["people"])
+    evidence = "\n".join(clue(e) for e in case["evidence"])
+    note = ""
+    if case.get("kind") == "real" and case.get("solved"):
+        note = ("\n[참고] 이 사건은 진범이 밝혀진 실제 사건이며, 등장인물 이름만 가명으로 바꿨다. "
+                "원장에 없는 사실을 끌어오지 말고, 오직 아래 원장으로만 판정한다.\n")
+    elif case.get("kind") == "real":
+        note = ("\n[참고] 이 사건은 실제 기록에 가상 인물과 가상 결말을 더한 것이다. "
+                "실제 기록 바깥의 역사적 사실을 끌어오지 말고, 오직 아래 원장으로만 판정한다.\n")
     facts = "\n".join(f"{i}. {f}" for i, f in enumerate(t["facts"], 1))
     story = "\n".join(t["story"])
     keys = "\n".join(f"- {k['id']} ({k['title']}): {k['fact']}" for k in t["keys"])
     return f"""[사건] {case['title']} — {case['era']}, {case['place']}, {case['type']}
-
+{note}
 [공개 자료: 개요]
 {chr(10).join(case['briefing'])}
 

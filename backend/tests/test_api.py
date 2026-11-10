@@ -7,49 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import cases
-from app.llm import Judge, Judgement, LLMError, OpenAIJudge, get_judge
-from app import main
+from app.llm import LLMError, OpenAIJudge, get_judge
 from app.main import app
-
-
-class FakeJudge(Judge):
-    ready = True
-    model = "fake"
-
-    def __init__(self):
-        self.calls = 0
-
-    def judge(self, case, question):
-        self.calls += 1
-        if "누구" in question:
-            return Judgement("INVALID", "NOT_YES_NO")
-        if "숙성실" in question:
-            return Judgement("YES", keys=["K1"])
-        if "돈이 목적" in question:
-            return Judgement("NO", keys=["K3"])
-        if "박상도" in question:
-            return Judgement("YES")
-        if "날씨" in question:
-            return Judgement("IRRELEVANT")
-        return Judgement("NO")
-
-    def grade(self, case, explanation):
-        return ["K4", "K5"] if "매각" in explanation else []
-
-
-@pytest.fixture()
-def fake():
-    judge = FakeJudge()
-    main._calls.clear()
-    main._answer_cache.clear()
-    app.dependency_overrides[get_judge] = lambda: judge
-    yield judge
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture()
-def client(fake):
-    return TestClient(app)
 
 
 def truth_strings():
@@ -75,20 +34,30 @@ def test_case_data_is_consistent():
         assert t["accomplice"] in ids | {None}
         assert [k["id"] for k in t["keys"]] == ["K1", "K2", "K3", "K4", "K5"]
         assert c["max_questions"] == 20
+        assert c["kind"] == "real" and c["basis"] and c["region"] in ("world", "korea")
+        # 실명 사건: 증거마다 실제/가상 표시, 인물은 모두 가상 이름
+        assert all(isinstance(e.get("real"), bool) for e in c["evidence"])
+        assert all(p.get("fictional") is True for p in c["people"])
+        if c["solved"]:
+            assert all(e["real"] for e in c["evidence"]) and "가상" in t["epilogue"]
+        else:
+            assert "허구" in t["epilogue"]
 
 
 def test_cases_list_hides_truth(client):
     res = client.get("/api/cases")
     assert res.status_code == 200
-    assert len(res.json()) == 3
+    assert len(res.json()) == 6
+    assert [c["region"] for c in res.json()].count("world") == 4
+    assert [c["id"] for c in res.json() if c["region"] == "korea"] == ["frog", "leechunjae"]
     assert_no_truth(res.json())
 
 
 def test_full_game_flow(client, fake):
-    state = client.post("/api/games", json={"case_id": "c1991"}).json()
+    state = client.post("/api/games", json={"case_id": "alcatraz"}).json()
     assert_no_truth(state)
     gid = state["game_id"]
-    assert state["remaining"] == 20 and state["case"]["keys"][0] == {"id": "K1", "title": "감금 장소"}
+    assert state["remaining"] == 20 and state["case"]["keys"][0] == {"id": "K1", "title": "세 사람의 생사"}
 
     r = client.post(f"/api/games/{gid}/questions", json={"question": "재현은 숙성실에 갇혀 있었나요?"}).json()
     assert r["status"] == "answered" and r["label"] == "예" and r["new_keys"] == ["K1"] and r["remaining"] == 19
@@ -113,7 +82,7 @@ def test_full_game_flow(client, fake):
     assert_no_truth(state)
 
     result = client.post(f"/api/games/{gid}/accusation",
-                         json={"culprit_id": "P3", "explanation": "매각을 막으려고 그랬고, 결렬되자 풀어줬다."}).json()
+                         json={"culprit_id": "P1", "explanation": "매각을 막으려고 그랬고, 결렬되자 풀어줬다."}).json()
     assert result["culprit_correct"] and result["solved_keys"] == 4
     assert result["score"] == 40 + 4 * 12 and result["rank"] == "명탐정"
     sources = {k["id"]: k["source"] for k in result["keys"]}
@@ -125,7 +94,7 @@ def test_full_game_flow(client, fake):
 
 
 def test_question_budget(client):
-    gid = client.post("/api/games", json={"case_id": "c1998"}).json()["game_id"]
+    gid = client.post("/api/games", json={"case_id": "ripper"}).json()["game_id"]
     for i in range(20):
         r = client.post(f"/api/games/{gid}/questions", json={"question": f"질문 {i}번인가요?"})
         assert r.status_code == 200
@@ -135,16 +104,22 @@ def test_question_budget(client):
 
 
 def test_accomplice_gets_partial_credit(client):
-    gid = client.post("/api/games", json={"case_id": "c2001"}).json()["game_id"]
-    result = client.post(f"/api/games/{gid}/accusation", json={"culprit_id": "P3", "explanation": ""}).json()
+    gid = client.post("/api/games", json={"case_id": "bermuda"}).json()["game_id"]
+    result = client.post(f"/api/games/{gid}/accusation", json={"culprit_id": "P1", "explanation": ""}).json()
     assert not result["culprit_correct"] and result["accomplice_named"] and result["score"] == 20
-    assert result["culprit"]["name"] == "서명준"
+    assert result["culprit"]["name"] == "시어도어 그랜트"
+
+
+def test_solved_case_result_is_marked(client):
+    gid = client.post("/api/games", json={"case_id": "leechunjae"}).json()["game_id"]
+    result = client.post(f"/api/games/{gid}/accusation", json={"culprit_id": "P1", "explanation": ""}).json()
+    assert result["culprit_correct"] and result["solved"] is True and result["region"] == "korea"
 
 
 def test_validation(client):
     assert client.post("/api/games", json={"case_id": "nope"}).status_code == 404
     assert client.get("/api/games/nope").status_code == 404
-    gid = client.post("/api/games", json={"case_id": "c1991"}).json()["game_id"]
+    gid = client.post("/api/games", json={"case_id": "zodiac"}).json()["game_id"]
     assert client.post(f"/api/games/{gid}/questions", json={"question": "   "}).status_code == 422
     assert client.post(f"/api/games/{gid}/questions", json={"question": "가" * 151}).status_code == 422
     assert client.post(f"/api/games/{gid}/accusation", json={"culprit_id": "P9"}).status_code == 422
@@ -156,7 +131,7 @@ def test_missing_api_key_is_friendly():
     try:
         c = TestClient(app)
         assert c.get("/api/health").json()["ai_ready"] is False
-        gid = c.post("/api/games", json={"case_id": "c1991"}).json()["game_id"]
+        gid = c.post("/api/games", json={"case_id": "zodiac"}).json()["game_id"]
         r = c.post(f"/api/games/{gid}/questions", json={"question": "아무 질문이나 해도 되나요?"})
         assert r.status_code == 503 and "OPENAI_API_KEY" in r.json()["detail"]
         assert c.get(f"/api/games/{gid}").json()["remaining"] == 20  # 실패한 질문은 세지 않는다
@@ -197,19 +172,27 @@ def test_openai_drops_unsupported_param_and_falls_back_model():
         _err(openai.BadRequestError, 400, param="reasoning_effort", message="Unsupported parameter: 'reasoning_effort'"),
         ok,
     ])
-    case = cases.get_case("c1991")
+    case = cases.get_case("zodiac")
     j = judge.judge(case, "숙성실인가요?")
     assert j.verdict == "YES" and j.keys == ["K1"]  # 없는 키 ID는 버린다
-    assert judge.model == "gpt-5-mini"
+    assert judge.model == "gpt-6-luna"
     sent = judge._client.sent
     assert sent[0]["model"] == "my-model" and "temperature" in sent[0]
     assert "reasoning_effort" in sent[1] and "reasoning_effort" not in sent[2]
     assert sent[2]["response_format"]["type"] == "json_schema"
 
 
+def test_openai_quota_message():
+    judge = OpenAIJudge(api_key="sk-test")
+    judge._client = FakeClient([_err(openai.RateLimitError, 429, message="You exceeded your current quota (insufficient_quota)")])
+    with pytest.raises(LLMError) as e:
+        judge.judge(cases.get_case("zodiac"), "질문인가요?")
+    assert e.value.status == 429 and "한도" in e.value.message
+
+
 def test_openai_bad_key_message():
     judge = OpenAIJudge(api_key="sk-bad")
     judge._client = FakeClient([_err(openai.AuthenticationError, 401, message="Incorrect API key")])
     with pytest.raises(LLMError) as e:
-        judge.judge(cases.get_case("c1991"), "질문인가요?")
+        judge.judge(cases.get_case("zodiac"), "질문인가요?")
     assert e.value.status == 502 and "키가 올바르지" in e.value.message

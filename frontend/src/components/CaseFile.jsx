@@ -5,12 +5,20 @@ const TABS = [
   ['evidence', '증거'],
   ['people', '인물'],
 ]
+const FOOT = {
+  solved: '진범이 밝혀진 실제 사건이에요. 등장인물 이름만 가상입니다.',
+  real: '‘실제 기록’ 표시만 사실이에요. 인물 이름은 가상, 가상 단서와 결말은 허구입니다.',
+  motif: '인물 · 장소 · 결말은 모두 허구입니다.',
+  user: '사용자가 만든 가상 사건입니다.',
+}
 
 export default function CaseFile({ c }) {
   const [tab, setTab] = useState('brief')
+  const isReal = c.kind === 'real'
 
   return (
     <section className="casefile paper" aria-label="사건 기록철">
+      <span className="clip" aria-hidden="true" />
       <header className="cf-head">
         <h2>사건 기록철</h2>
         <span className="cf-stamp">No.{c.number}</span>
@@ -30,15 +38,15 @@ export default function CaseFile({ c }) {
           <>
             <dl className="cf-meta">
               <div>
-                <dt>일시</dt>
+                <dt>DATE</dt>
                 <dd>{c.era}</dd>
               </div>
               <div>
-                <dt>장소</dt>
+                <dt>PLACE</dt>
                 <dd>{c.place}</dd>
               </div>
               <div>
-                <dt>유형</dt>
+                <dt>TYPE</dt>
                 <dd>{c.type}</dd>
               </div>
             </dl>
@@ -48,7 +56,7 @@ export default function CaseFile({ c }) {
               </p>
             ))}
             <div className="cf-question">
-              <span>풀어야 할 질문</span>
+              <span>QUESTION</span>
               {c.question}
             </div>
           </>
@@ -61,6 +69,7 @@ export default function CaseFile({ c }) {
                 <span className="ev-id">{e.id}</span>
                 <div>
                   <strong>{e.title}</strong>
+                  {isReal && (e.real ? <span className="tag real">실제 기록</span> : <span className="tag fic">가상 단서</span>)}
                   <p>{e.body}</p>
                 </div>
               </li>
@@ -77,8 +86,9 @@ export default function CaseFile({ c }) {
                 </span>
                 <div>
                   <strong>
-                    {p.name} <em>{p.age}세 · {p.role}</em>
+                    {p.name} <em>{[p.age ? `${p.age}세` : null, p.role].filter(Boolean).join(' · ')}</em>
                   </strong>
+                  {p.fictional && <span className="tag fic">가상 이름</span>}
                   <p>{p.desc}</p>
                 </div>
               </li>
@@ -86,7 +96,9 @@ export default function CaseFile({ c }) {
           </ul>
         )}
       </div>
-      <footer className="cf-foot">모티프 · {c.motif} — 인물·장소·결말은 허구입니다.</footer>
+      <footer className="cf-foot">
+        {c.basis} — {(c.kind === 'real' && c.solved ? FOOT.solved : FOOT[c.kind]) || FOOT.motif}
+      </footer>
     </section>
   )
 }

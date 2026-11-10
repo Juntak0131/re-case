@@ -4,11 +4,32 @@ import Logo from './Logo.jsx'
 import CaseFile from './CaseFile.jsx'
 import Notebook from './Notebook.jsx'
 import Accuse from './Accuse.jsx'
+import { DetectiveBadge, RainToggle } from './Chrome.jsx'
 
 const MAX_LEN = 150
 const STAMP = { YES: 'yes', NO: 'no', IRRELEVANT: 'irr' }
 
-export default function Play({ game, setGame, health, onHome, onFinished }) {
+// 쓴 질문을 감방 벽의 바를 정(正)처럼 다섯 개씩 긋는다
+function Tally({ used, total }) {
+  const groups = Math.ceil(total / 5)
+  return (
+    <svg className="tally" viewBox={`0 0 ${groups * 30} 22`} width={groups * 30} height="22" aria-hidden="true">
+      {Array.from({ length: groups }, (_, g) => {
+        const x = g * 30 + 4
+        return (
+          <g key={g}>
+            {[0, 1, 2, 3].map((k) => (
+              <line key={k} x1={x + k * 5.5} y1={3 + (k % 2)} x2={x + k * 5.5 + (k % 2 ? 0.8 : -0.6)} y2={19} className={g * 5 + k < used ? 'on' : ''} />
+            ))}
+            <line x1={x - 3} y1={16} x2={x + 20} y2={6} className={g * 5 + 4 < used ? 'on' : ''} />
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+export default function Play({ game, setGame, health, detective, rain, onDetective, onRain, onHome, onFinished }) {
   const c = game.case
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(null)
@@ -95,24 +116,24 @@ export default function Play({ game, setGame, health, onHome, onFinished }) {
         <div className="tb-case">
           <span className="tb-no">No.{c.number}</span>
           <strong>{c.title}</strong>
-          <span className="chip">결말은 허구</span>
+          <span className="chip">{c.kind === 'user' ? '사용자 사건' : '결말은 허구'}</span>
         </div>
         <div className="tb-count" aria-label={`남은 질문 ${game.remaining}개`}>
+          <Tally used={game.max_questions - game.remaining} total={game.max_questions} />
           <span className="tb-count-label">남은 질문</span>
           <b>{game.remaining}</b>
           <span className="tb-of">/ {game.max_questions}</span>
-          <span className="dots" aria-hidden="true">
-            {Array.from({ length: game.max_questions }, (_, i) => (
-              <i key={i} className={i < game.remaining ? 'on' : ''} />
-            ))}
-          </span>
+        </div>
+        <div className="tb-tools">
+          <RainToggle on={rain} onToggle={onRain} />
+          <DetectiveBadge name={detective} onChange={onDetective} />
         </div>
       </header>
 
       <nav className="panel-tabs" role="tablist">
         {[
           ['file', '기록철'],
-          ['qa', '질문실'],
+          ['qa', '진술 조서'],
           ['note', `수첩 ${game.found_keys.length}/${c.keys.length}`],
         ].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={panel === id} className={`${panel === id ? 'on' : ''} ${id === 'note' && flash.length ? 'ping' : ''}`} onClick={() => setPanel(id)}>
@@ -121,25 +142,43 @@ export default function Play({ game, setGame, health, onHome, onFinished }) {
         ))}
       </nav>
 
-      <div className="board" data-panel={panel}>
+      <div className="desk" data-panel={panel}>
         <div className="col col-file">
           <CaseFile c={c} />
         </div>
 
-        <section className="col col-qa qa" aria-label="질문실">
+        <section className="col col-qa qa" aria-label="진술 조서">
           <header className="qa-head">
-            <span className="judge-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3v18M7 21h10M5 7h14M5 7l-3 6a3 3 0 0 0 6 0L5 7zm14 0-3 6a3 3 0 0 0 6 0l-3-6z" />
-              </svg>
-            </span>
+            <span className="lamp" aria-hidden="true" />
             <div>
-              <strong>AI 판정관</strong>
-              <small>예 · 아니오 · 관계없음으로만 답합니다</small>
+              <strong>진술 조서</strong>
+              <small>판정관은 예 · 아니오 · 관계없음으로만 답합니다</small>
             </div>
           </header>
 
           <div className="qa-log" ref={logRef} aria-live="polite">
+            <div className="record">
+            <div className="rec-head">
+              <h3>진 술 조 서</h3>
+              <dl>
+                <div>
+                  <dt>사건번호</dt>
+                  <dd>{c.number}</dd>
+                </div>
+                <div>
+                  <dt>사건명</dt>
+                  <dd>{c.title}</dd>
+                </div>
+                <div>
+                  <dt>담당 수사관</dt>
+                  <dd>{detective || '이름 없음'}</dd>
+                </div>
+                <div>
+                  <dt>진술인</dt>
+                  <dd>AI 판정관</dd>
+                </div>
+              </dl>
+            </div>
             <div className="intro">
               <p className="intro-q">
                 <span>풀어야 할 질문</span>
@@ -168,11 +207,12 @@ export default function Play({ game, setGame, health, onHome, onFinished }) {
 
             {game.history.map((e, i) => (
               <div key={e.n} className="turn" id={`q-${e.n}`}>
-                <div className="bubble">
-                  <span className="qn">Q{e.n}</span>
+                <p className="bubble">
+                  <span className="qn">문 {e.n})</span>
                   {e.question}
-                </div>
+                </p>
                 <div className={`verdict ${freshEntry === e.n ? 'fresh' : ''}`}>
+                  <span className="an">답)</span>
                   <span className={`stamp ${STAMP[e.answer]}`}>{e.label}</span>
                   {e.keys.map((k) => (
                     <span key={k} className="key-found">
@@ -186,8 +226,12 @@ export default function Play({ game, setGame, health, onHome, onFinished }) {
 
             {pending && (
               <div className="turn">
-                <div className="bubble pending-q">{pending}</div>
+                <p className="bubble pending-q">
+                  <span className="qn">문 {used + 1})</span>
+                  {pending}
+                </p>
                 <div className="verdict">
+                  <span className="an">답)</span>
                   <span className="stamp wait">
                     판정 중<i className="dotdot" />
                   </span>
@@ -203,6 +247,7 @@ export default function Play({ game, setGame, health, onHome, onFinished }) {
                 </button>
               </div>
             )}
+            </div>
           </div>
 
           <form
@@ -212,6 +257,9 @@ export default function Play({ game, setGame, health, onHome, onFinished }) {
               ask(input)
             }}
           >
+            <span className="qa-prompt" aria-hidden="true">
+              문)
+            </span>
             <input
               ref={inputRef}
               value={input}

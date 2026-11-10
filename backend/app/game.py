@@ -136,7 +136,10 @@ class Game:
             "explanation": explanation,
             "story": truth["story"],
             "epilogue": truth["epilogue"],
-            "motif": self.case["motif"],
+            "basis": self.case.get("basis", ""),
+            "kind": self.case.get("kind", ""),
+            "region": self.case.get("region"),
+            "solved": bool(self.case.get("solved")),
         }
         return self.result
 

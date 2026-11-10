@@ -46,7 +46,7 @@ export default function Notebook({ game, flash, onJump, onAccuse }) {
           id="memo"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
-          placeholder={'떠오르는 생각을 적어 두세요.\n예) 기계음 = 공장 안?'}
+          placeholder={'떠오르는 생각을 적어 두세요.\n예) 범인은 내부 사람?'}
           maxLength={2000}
         />
       </div>

@@ -8,7 +8,7 @@ const RULES = [
   '언제든 범인을 지목하고 추리를 제출할 수 있어요.',
 ]
 
-export default function Gate({ caseInfo, busy, onCancel, onConfirm }) {
+export default function Gate({ caseInfo, detective, busy, onCancel, onConfirm }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && !busy && onCancel()
     window.addEventListener('keydown', onKey)
@@ -17,10 +17,15 @@ export default function Gate({ caseInfo, busy, onCancel, onConfirm }) {
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="gate-title">
-      <div className="modal paper">
-        <p className="modal-kicker">No.{caseInfo.number} · {caseInfo.title}</p>
+      <div className="modal paper gate">
+        <p className="modal-kicker">
+          사건번호 {caseInfo.number}
+          <span>담당 수사관 {detective || '미등록'}</span>
+        </p>
+        <p className="gate-case">{caseInfo.title}</p>
         <h2 id="gate-title">수사를 시작하기 전에</h2>
-        <FictionNote motif={caseInfo.motif} />
+        {caseInfo.teaser && <p className="gate-teaser">{caseInfo.teaser}</p>}
+        <FictionNote kind={caseInfo.kind} basis={caseInfo.basis} solved={caseInfo.solved} region={caseInfo.region} />
         <ul className="rules">
           {RULES.map((r) => (
             <li key={r}>{r}</li>

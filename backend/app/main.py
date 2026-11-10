@@ -1,14 +1,17 @@
 """RE:CASE API 서버. 빌드된 프론트엔드(frontend/dist)가 있으면 같이 서빙한다."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -16,7 +19,7 @@ from pydantic import BaseModel, Field
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BACKEND_DIR / ".env")
 
-from . import cases  # noqa: E402
+from . import cases, store, studio  # noqa: E402
 from .game import ANSWER_LABEL, INVALID_MESSAGE, GameStore, normalize  # noqa: E402
 from .llm import Judge, Judgement, LLMError, get_judge  # noqa: E402
 
@@ -24,14 +27,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 MAX_QUESTION_LEN = 150
 MAX_EXPLANATION_LEN = 1200
-RATE_LIMIT = 30  # IP당 1분에 AI 호출 수
+# (버킷: 횟수, 초) — IP 기준
+RATE_LIMITS = {
+    "ask": (30, 60),
+    "generate": (6, 3600),
+    "review": (30, 3600),
+    "save": (30, 3600),
+}
+RATE_MESSAGES = {
+    "ask": "질문이 너무 빨라요. 잠시 쉬었다가 다시 물어봐 주세요.",
+    "generate": "AI 사건 생성은 한 시간에 6번까지 할 수 있어요. 조금 뒤에 다시 시도해 주세요.",
+    "review": "AI 검사를 너무 자주 했어요. 조금 뒤에 다시 시도해 주세요.",
+    "save": "사건 저장을 너무 자주 했어요. 조금 뒤에 다시 시도해 주세요.",
+}
 
-app = FastAPI(title="RE:CASE", version="1.0.0")
-store = GameStore()
+app = FastAPI(title="RE:CASE", version="2.0.0")
+games = GameStore()
 
 _answer_cache: dict[tuple[str, str], Judgement] = {}
 _cache_lock = threading.Lock()
-_calls: dict[str, deque] = defaultdict(deque)
+_calls: dict[tuple[str, str], deque] = defaultdict(deque)
 _rate_lock = threading.Lock()
 
 
@@ -40,23 +55,61 @@ def _llm_error(_: Request, exc: LLMError):
     return JSONResponse(status_code=exc.status, content={"detail": exc.message})
 
 
-def _rate_limit(request: Request) -> None:
+@app.exception_handler(studio.CaseFormatError)
+def _format_error(_: Request, exc: studio.CaseFormatError):
+    return JSONResponse(status_code=422, content={"detail": "사건 형식에 고칠 곳이 있어요.", "issues": exc.issues})
+
+
+def _rate_limit(request: Request, bucket: str = "ask") -> None:
+    limit, window = RATE_LIMITS[bucket]
     ip = request.client.host if request.client else "unknown"
     now = time.time()
     with _rate_lock:
-        q = _calls[ip]
-        while q and now - q[0] > 60:
+        q = _calls[(bucket, ip)]
+        while q and now - q[0] > window:
             q.popleft()
-        if len(q) >= RATE_LIMIT:
-            raise HTTPException(429, "질문이 너무 빨라요. 잠시 쉬었다가 다시 물어봐 주세요.")
+        if len(q) >= limit:
+            raise HTTPException(429, RATE_MESSAGES[bucket])
         q.append(now)
 
 
 def _game(game_id: str):
-    game = store.get(game_id)
+    game = games.get(game_id)
     if not game:
         raise HTTPException(404, "게임을 찾을 수 없어요. 서버가 다시 켜졌을 수 있으니 사건을 새로 시작해 주세요.")
     return game
+
+
+def _case_or_404(case_id: str) -> dict:
+    case = cases.get_case(case_id)
+    if not case:
+        raise HTTPException(404, "없는 사건이에요. 링크가 맞는지 확인해 주세요.")
+    return case
+
+
+def _case_version(case: dict) -> str:
+    """판정 캐시 키. 사용자 사건은 수정될 수 있어서 진실 원장 내용까지 묶는다."""
+    if case.get("kind") != "user":
+        return case["id"]
+    digest = hashlib.sha1(json.dumps(case["truth"], ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+    return f"{case['id']}:{digest}"
+
+
+def _owned(case_id: str, key: Optional[str]) -> dict:
+    case = store.get(case_id)
+    if not case:
+        raise HTTPException(404, "없는 사건이에요.")
+    if not store.check_key(case_id, key):
+        raise HTTPException(403, "이 사건을 고칠 수 있는 수정 키가 아니에요.")
+    return case
+
+
+def _safety(judge: Judge, case: dict, review: Optional[dict] = None) -> None:
+    flagged = judge.moderate(studio.all_text(case))
+    if flagged:
+        raise HTTPException(422, "게임에 넣을 수 없는 내용이 있어요. (성적인 내용, 혐오, 잔혹한 묘사 등) 내용을 고쳐 주세요.")
+    if review and review.get("blocked"):
+        raise HTTPException(422, f"이 사건은 만들 수 없어요: {review.get('blocked_reason') or '안전 규칙 위반'}")
 
 
 class NewGame(BaseModel):
@@ -72,7 +125,20 @@ class Accusation(BaseModel):
     explanation: str = Field("", max_length=MAX_EXPLANATION_LEN * 2)
 
 
-# ---------------- API ----------------
+class Brief(BaseModel):
+    era: str = Field("", max_length=40)
+    place: str = Field("", max_length=60)
+    case_type: str = Field("", max_length=40)
+    mood: str = Field("", max_length=40)
+    difficulty: str = Field("보통", max_length=10)
+    idea: str = Field("", max_length=500)
+
+
+class CaseBody(BaseModel):
+    case: dict
+
+
+# ---------------- 게임 ----------------
 @app.get("/api/health")
 def health(judge: Judge = Depends(get_judge)):
     return {"ok": True, "ai_ready": judge.ready, "model": judge.model}
@@ -83,12 +149,17 @@ def list_cases():
     return [cases.summary(c) for c in cases.all_cases()]
 
 
+@app.get("/api/cases/{case_id}")
+def case_summary(case_id: str):
+    return cases.summary(_case_or_404(case_id))
+
+
 @app.post("/api/games")
 def new_game(body: NewGame):
-    case = cases.get_case(body.case_id)
-    if not case:
-        raise HTTPException(404, "없는 사건이에요.")
-    return store.create(case).state()
+    case = _case_or_404(body.case_id)
+    if case.get("kind") == "user":
+        store.count_play(case["id"])
+    return games.create(case).state()
 
 
 @app.get("/api/games/{game_id}")
@@ -119,11 +190,11 @@ def ask(game_id: str, body: Question, request: Request, judge: Judge = Depends(g
         game.busy = True
 
     try:
-        cache_key = (game.case["id"], normalize(question))
+        cache_key = (_case_version(game.case), normalize(question))
         with _cache_lock:
             verdict = _answer_cache.get(cache_key)
         if verdict is None:
-            _rate_limit(request)
+            _rate_limit(request, "ask")
             verdict = judge.judge(game.case, question)
             with _cache_lock:
                 if len(_answer_cache) > 20000:
@@ -160,12 +231,85 @@ def accuse(game_id: str, body: Accusation, request: Request, judge: Judge = Depe
 
     explained: list[str] = []
     if len(explanation) >= 10:
-        _rate_limit(request)
+        _rate_limit(request, "ask")
         explained = judge.grade(game.case, explanation)
     with game.lock:
         if game.result:
             return game.result
         return game.finish(body.culprit_id, explanation, explained)
+
+
+# ---------------- 사건 제작실 ----------------
+@app.post("/api/studio/generate")
+def generate(body: Brief, request: Request, judge: Judge = Depends(get_judge)):
+    brief = body.model_dump()
+    if brief["difficulty"] not in studio.DIFFICULTIES:
+        brief["difficulty"] = "보통"
+    if judge.moderate(" / ".join(v for v in brief.values() if v)):
+        raise HTTPException(422, "게임에 넣을 수 없는 내용이 있어요. (성적인 내용, 혐오, 잔혹한 묘사 등) 조건을 바꿔 주세요.")
+    _rate_limit(request, "generate")
+    last_error = None
+    for _ in range(2):  # 형식이 어긋나면 한 번 더 만든다
+        data = judge.generate(brief)
+        if data.get("blocked"):
+            raise HTTPException(422, f"이 조건으로는 사건을 만들 수 없어요: {data.get('blocked_reason') or '안전 규칙 위반'}")
+        try:
+            case = studio.from_generated(data)
+            break
+        except studio.CaseFormatError as e:
+            last_error = e
+    else:
+        raise HTTPException(502, f"AI가 만든 사건 형식이 맞지 않아요. 다시 시도해 주세요. ({last_error})")
+    _safety(judge, case)
+    case_id, key = store.create(case, "ai")
+    return {"case_id": case_id, "edit_key": key, "case": cases.summary(store.get(case_id))}
+
+
+@app.post("/api/studio/review")
+def review(body: CaseBody, request: Request, judge: Judge = Depends(get_judge)):
+    try:
+        case = studio.normalize(body.case)
+    except studio.CaseFormatError as e:
+        # 형식 문제는 AI를 부르지 않고 바로 알려 준다
+        return {"verdict": "플레이 불가", "blocked": False, "blocked_reason": "", "issues": e.issues}
+    _rate_limit(request, "review")
+    result = judge.review(case)
+    issues = [i for i in result.get("issues", []) if i.get("message")]
+    return {"verdict": result.get("verdict", "보완 필요"), "blocked": bool(result.get("blocked")),
+            "blocked_reason": result.get("blocked_reason", ""), "issues": issues}
+
+
+@app.post("/api/studio/cases")
+def save_case(body: CaseBody, request: Request, judge: Judge = Depends(get_judge)):
+    case = studio.normalize(body.case)
+    _rate_limit(request, "save")
+    _safety(judge, case, judge.review(case))
+    case_id, key = store.create(case, "manual")
+    return {"case_id": case_id, "edit_key": key, "case": cases.summary(store.get(case_id))}
+
+
+@app.get("/api/studio/cases/{case_id}")
+def load_case(case_id: str, x_edit_key: Optional[str] = Header(None)):
+    case = _owned(case_id, x_edit_key)
+    return {"case_id": case_id, "source": case["source"], "case": studio.editable(case)}
+
+
+@app.put("/api/studio/cases/{case_id}")
+def update_case(case_id: str, body: CaseBody, request: Request, x_edit_key: Optional[str] = Header(None),
+                judge: Judge = Depends(get_judge)):
+    _owned(case_id, x_edit_key)
+    case = studio.normalize(body.case)
+    _rate_limit(request, "save")
+    _safety(judge, case, judge.review(case))
+    store.update(case_id, case)
+    return {"case_id": case_id, "case": cases.summary(store.get(case_id))}
+
+
+@app.delete("/api/studio/cases/{case_id}")
+def delete_case(case_id: str, x_edit_key: Optional[str] = Header(None)):
+    _owned(case_id, x_edit_key)
+    store.delete(case_id)
+    return {"ok": True}
 
 
 # ---------------- 프론트엔드 ----------------
