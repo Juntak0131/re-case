@@ -112,7 +112,7 @@ function useStrings(boardRef, deps) {
   return lines
 }
 
-export default function Home({ cases, health, error, saved, mine, detective, rain, onDetective, onRain, onRetry, onStart, onResume, onOpenCode, onStudio, onForget, toast }) {
+export default function Home({ cases, health, error, saved, mine, detective, rain, onDetective, onRain, onRetry, onStart, onResume, onOpenCode, onStudio, onForget, onReview, toast }) {
   const [code, setCode] = useState('')
   const [mineInfo, setMineInfo] = useState({})
   const [lit, setLit] = useState(null) // 조명을 비춘 사건
@@ -207,6 +207,13 @@ export default function Home({ cases, health, error, saved, mine, detective, rai
       <header className="strip">
         <Logo />
         <div className="strip-tools">
+          <button className="rain-btn" onClick={onReview} title="RE:CASE 후기 설문">
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+              <path d="M6 3.5h9l3 3v14H6z" />
+              <path d="M9 10h6M9 13.5h6M9 17h3.5" strokeLinecap="round" />
+            </svg>
+            <span>후기 남기기</span>
+          </button>
           <RainToggle on={rain} onToggle={onRain} />
           <DetectiveBadge name={detective} onChange={onDetective} />
         </div>

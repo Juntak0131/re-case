@@ -7,7 +7,7 @@ const SOURCE = {
 }
 const STAMP = { YES: 'yes', NO: 'no', IRRELEVANT: 'irr' }
 
-export default function Result({ game, detective, onHome, onReplay }) {
+export default function Result({ game, detective, onHome, onReplay, onReview }) {
   const r = game.result
   const c = game.case
   const decisive = new Set(game.history.filter((e) => e.keys.length).map((e) => e.n))
@@ -117,6 +117,16 @@ export default function Result({ game, detective, onHome, onReplay }) {
             </ol>
           </section>
         )}
+
+        <section className="rv-invite">
+          <div>
+            <h2>이번 수사는 어땠나요?</h2>
+            <p>후기를 남겨 주시면 다음 사건과 판정관을 고치는 데 씁니다. 로그인 없이 2~3분이면 끝나요.</p>
+          </div>
+          <button className="btn ghost-dark" onClick={onReview}>
+            후기 남기기
+          </button>
+        </section>
 
         <div className="result-actions">
           <button className="btn ghost-dark" onClick={onReplay}>

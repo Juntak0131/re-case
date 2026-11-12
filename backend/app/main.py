@@ -2,24 +2,27 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
 import logging
 import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BACKEND_DIR / ".env")
 
-from . import cases, store, studio  # noqa: E402
+from . import cases, feedback, store, studio  # noqa: E402
 from .game import ANSWER_LABEL, INVALID_MESSAGE, GameStore, normalize  # noqa: E402
 from .llm import Judge, Judgement, LLMError, get_judge  # noqa: E402
 
@@ -33,12 +36,16 @@ RATE_LIMITS = {
     "generate": (6, 3600),
     "review": (30, 3600),
     "save": (30, 3600),
+    "feedback": (5, 3600),
+    "admin_fail": (10, 600),
 }
 RATE_MESSAGES = {
     "ask": "질문이 너무 빨라요. 잠시 쉬었다가 다시 물어봐 주세요.",
     "generate": "AI 사건 생성은 한 시간에 6번까지 할 수 있어요. 조금 뒤에 다시 시도해 주세요.",
     "review": "AI 검사를 너무 자주 했어요. 조금 뒤에 다시 시도해 주세요.",
     "save": "사건 저장을 너무 자주 했어요. 조금 뒤에 다시 시도해 주세요.",
+    "feedback": "후기는 한 시간에 5번까지 보낼 수 있어요. 조금 뒤에 다시 시도해 주세요.",
+    "admin_fail": "비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도해 주세요.",
 }
 
 app = FastAPI(title="RE:CASE", version="2.0.0")
@@ -53,6 +60,14 @@ _rate_lock = threading.Lock()
 @app.exception_handler(LLMError)
 def _llm_error(_: Request, exc: LLMError):
     return JSONResponse(status_code=exc.status, content={"detail": exc.message})
+
+
+@app.exception_handler(feedback.FeedbackError)
+def _feedback_error(_: Request, exc: feedback.FeedbackError):
+    content = {"detail": exc.message}
+    if exc.issues:
+        content["issues"] = exc.issues
+    return JSONResponse(status_code=exc.status, content=content)
 
 
 @app.exception_handler(studio.CaseFormatError)
@@ -310,6 +325,60 @@ def delete_case(case_id: str, x_edit_key: Optional[str] = Header(None)):
     _owned(case_id, x_edit_key)
     store.delete(case_id)
     return {"ok": True}
+
+
+# ---------------- 후기 설문 ----------------
+@app.get("/api/feedback/form")
+def feedback_form():
+    return feedback.form()
+
+
+@app.post("/api/feedback")
+def submit_feedback(body: dict, request: Request, fb_store=Depends(feedback.get_store)):
+    if body.get("website"):  # 사람 눈에 안 보이는 칸. 채워져 있으면 자동 입력 프로그램으로 보고 저장하지 않는다
+        return {"ok": True}
+    record = feedback.validate(body)
+    _rate_limit(request, "feedback")
+    fb_store.add(record)
+    return {"ok": True, "id": record["id"]}
+
+
+def _admin(request: Request, password: Optional[str]) -> None:
+    expected = os.getenv("ADMIN_PASSWORD", "")
+    if not expected:
+        raise HTTPException(503, "관리자 비밀번호(ADMIN_PASSWORD)가 아직 설정되지 않았어요. Render 환경 변수에 추가해 주세요.")
+    limit, window = RATE_LIMITS["admin_fail"]
+    key = ("admin_fail", request.client.host if request.client else "unknown")
+    now = time.time()
+    with _rate_lock:
+        q = _calls[key]
+        while q and now - q[0] > window:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(429, RATE_MESSAGES["admin_fail"])
+    # 화면은 한글 비밀번호도 보낼 수 있게 encodeURIComponent로 감싸서 보낸다
+    password = unquote(password or "")
+    if not password or not hmac.compare_digest(password.encode(), expected.encode()):
+        with _rate_lock:
+            _calls[key].append(now)
+        raise HTTPException(401, "관리자 비밀번호가 맞지 않아요.")
+
+
+@app.get("/api/admin/feedback")
+def admin_feedback(request: Request, x_admin_password: Optional[str] = Header(None), fb_store=Depends(feedback.get_store)):
+    _admin(request, x_admin_password)
+    rows = fb_store.list()
+    responses = [{**r, "avg": feedback.response_avg(r)} for r in reversed(rows)]  # 저장소는 들어온 순서대로 준다
+    return {"store": fb_store.kind, "summary": feedback.summarize(rows), "responses": responses}
+
+
+@app.get("/api/admin/feedback.csv")
+def admin_feedback_csv(request: Request, x_admin_password: Optional[str] = Header(None), fb_store=Depends(feedback.get_store)):
+    _admin(request, x_admin_password)
+    rows = fb_store.list()
+    return Response(feedback.to_csv(rows), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''RE-CASE_feedback.csv",
+                             "Cache-Control": "no-store"})
 
 
 # ---------------- 프론트엔드 ----------------

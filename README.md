@@ -34,13 +34,14 @@
 3. [게임 방법](#3-게임-방법)
 4. [수록 사건](#4-수록-사건)
 5. [사건 제작실](#5-사건-제작실)
-6. [실행 방법](#6-실행-방법)
-7. [OpenAI 사용량과 비용](#7-openai-사용량과-비용)
-8. [AI 구조와 안전장치](#8-ai-구조와-안전장치)
-9. [API](#9-api)
-10. [폴더 구조](#10-폴더-구조)
-11. [테스트](#11-테스트)
-12. [개발 일정](#12-개발-일정)
+6. [후기 설문과 관리자 화면](#6-후기-설문과-관리자-화면)
+7. [실행 방법](#7-실행-방법)
+8. [OpenAI 사용량과 비용](#8-openai-사용량과-비용)
+9. [AI 구조와 안전장치](#9-ai-구조와-안전장치)
+10. [API](#10-api)
+11. [폴더 구조](#11-폴더-구조)
+12. [테스트](#12-테스트)
+13. [개발 일정](#13-개발-일정)
 
 <br>
 
@@ -137,7 +138,43 @@
 
 <br>
 
-## 6. 실행 방법
+## 6. 후기 설문과 관리자 화면
+
+플레이한 사람이 남기는 후기를 사이트 안에서 받고, 관리자만 한 화면에서 모아 봅니다. 회원가입이나 로그인은 없고, 이름이나 닉네임만 적으면 됩니다.
+
+| 화면 | 주소 | 설명 |
+|---|---|---|
+| **후기 설문** | `/review` | 메인 화면 오른쪽 위 ‘후기 남기기’, 결과 보고서 아래 ‘후기 남기기’로 들어갑니다. 구글 폼 설문과 같은 13문항(1~5점) + 좋았던 점 · 고칠 점. 결과 화면에서 들어오면 방금 한 사건이 미리 골라져 있어요. |
+| **후기 관리** | `/admin` | `ADMIN_PASSWORD`로 잠겨 있습니다. 응답 수 · 만족도(12번) · 추천 의향(13번) · 문항별 평균과 1~5점 분포 · 플레이한 사건 · 남긴 의견 · 응답 목록(줄을 누르면 문항별 답)을 보여 주고, **1분마다 자동으로 새로고침**합니다. 새로 들어온 응답은 ‘새 응답’으로 표시되고, CSV(엑셀용)로 내려받을 수 있어요. |
+
+**저장소 — TiDB Cloud** : Render 무료 서버는 잠들거나 다시 배포되면 디스크가 지워집니다. 그래서 응답은 MySQL 호환 클라우드 DB인 [TiDB Cloud](https://tidbcloud.com)에 저장합니다. 접속 정보가 없으면 `backend/data/feedback.db`(임시)에 저장하고, 관리자 화면에 경고가 뜹니다.
+
+<details>
+<summary><b>TiDB Cloud 연결 방법 (처음 한 번)</b></summary>
+
+1. [tidbcloud.com](https://tidbcloud.com)에 가입하고 무료 **Starter** 클러스터를 만듭니다. 지역은 Render 서비스 지역과 가까운 곳으로 고르세요.
+2. 클러스터 화면 오른쪽 위 **Connect** → Connection Type `Public`, Connect With `General` → **Generate Password**. 화면에 나온 HOST · PORT · USERNAME · PASSWORD를 적어 둡니다. (비밀번호는 이때만 보여요)
+3. Render → 서비스 → **Environment** 에 아래 값을 넣고 저장합니다. 저장하면 다시 배포돼요.
+
+   | 이름 | 값 |
+   |---|---|
+   | `TIDB_HOST` | Connect 창의 HOST (예: `gateway01.….prod.aws.tidbcloud.com`) |
+   | `TIDB_PORT` | `4000` |
+   | `TIDB_USER` | Connect 창의 USERNAME (예: `xxxxxxxx.root`) |
+   | `TIDB_PASSWORD` | 2에서 만든 비밀번호 |
+   | `TIDB_DB_NAME` | `recase` (없으면 서버가 처음 저장할 때 만듭니다) |
+   | `ADMIN_PASSWORD` | 관리자 화면 비밀번호 (직접 정하기) |
+
+4. `https://내-주소/admin` 에 들어가 “응답은 TiDB Cloud에 저장돼요”가 보이면 연결된 것입니다.
+
+TiDB Cloud 콘솔의 SQL Editor에서 `SELECT * FROM recase.feedback ORDER BY created_at DESC;` 로 원본 데이터도 볼 수 있어요. 접속은 항상 암호화(TLS)로 하고, 인증서는 `certifi` 묶음을 씁니다.
+</details>
+
+**지키는 것** : 관리자 비밀번호는 서버 환경 변수에만 두고 비교는 `hmac.compare_digest`로 합니다. 비밀번호를 10분에 10번 틀리면 잠시 막힙니다. 설문은 IP당 1시간에 5번까지 받고, 사람 눈에 안 보이는 칸(허니팟)을 채운 자동 등록은 버립니다. CSV에서 `=`, `+`, `-`, `@`로 시작하는 글은 엑셀이 수식으로 읽지 않게 막습니다. 이름은 관리자 화면에만 보입니다.
+
+<br>
+
+## 7. 실행 방법
 
 **준비물** : Python 3.10 이상, Node.js 18 이상, OpenAI API 키
 
@@ -191,12 +228,15 @@ venv\Scripts\python -m uvicorn app.main:app --port 8000
 | `OPENAI_API_KEY` | OpenAI API 키 (필수) |
 | `OPENAI_MODEL` | 비우면 `gpt-6-luna`. 그 키로 쓸 수 없는 모델이면 `gpt-5-mini` → `gpt-4.1-mini` → `gpt-4o-mini` 순서로 자동 전환 |
 | `RECASE_DB` | 사용자 사건 저장 위치 (기본 `backend/data/user_cases.db`, `.gitignore`에 포함) |
+| `ADMIN_PASSWORD` | 후기 관리 화면(`/admin`) 비밀번호. 비우면 관리자 화면이 열리지 않아요 |
+| `TIDB_HOST` · `TIDB_PORT` · `TIDB_USER` · `TIDB_PASSWORD` · `TIDB_DB_NAME` | 후기 설문 저장소(TiDB Cloud) 접속 정보. 비우면 `backend/data/feedback.db`에 임시 저장 ([6장](#6-후기-설문과-관리자-화면)) |
+| `CA_PATH` | (선택) TiDB 접속에 쓸 인증서 파일. 비우면 `certifi` 묶음 |
 
-> 🔒 **API 키 주의** : `.env`는 `.gitignore`에 들어 있어 GitHub에 올라가지 않습니다. 이 저장소는 공개(Public)이므로 **키를 코드 · README · 커밋 · 채팅에 절대 적지 마세요.** GitHub 웹 업로드는 `.gitignore`를 거르지 않을 수 있으니, 실행하던 폴더가 아니라 깨끗한 복사본을 올려 주세요.
+> 🔒 **API 키 · 비밀번호 주의** : `.env`는 `.gitignore`에 들어 있어 GitHub에 올라가지 않습니다. 이 저장소는 공개(Public)이므로 **OpenAI 키 · TiDB 비밀번호 · 관리자 비밀번호를 코드 · README · 커밋 · 채팅에 절대 적지 마세요.** 배포 서버에는 Render 환경 변수로만 넣어요. GitHub 웹 업로드는 `.gitignore`를 거르지 않을 수 있으니, 실행하던 폴더가 아니라 깨끗한 복사본을 올려 주세요.
 
 <br>
 
-## 7. OpenAI 사용량과 비용
+## 8. OpenAI 사용량과 비용
 
 **토큰 길이 한계는 문제되지 않습니다.** 질문 판정 한 번의 입력은 약 4~5천 토큰, 사건 생성 출력은 1만 토큰 안팎인데, 모델의 입력 한도는 40만~105만 토큰, 최대 출력은 12.8만 토큰입니다.
 
@@ -209,7 +249,7 @@ venv\Scripts\python -m uvicorn app.main:app --port 8000
 
 <br>
 
-## 8. AI 구조와 안전장치
+## 9. AI 구조와 안전장치
 
 ```mermaid
 flowchart LR
@@ -234,7 +274,7 @@ flowchart LR
 
 <br>
 
-## 9. API
+## 10. API
 
 | Method | Endpoint | 설명 |
 |---|---|---|
@@ -249,13 +289,17 @@ flowchart LR
 | `POST` | `/api/studio/review` | 직접 쓴 사건 AI 검사 (저장 안 함) |
 | `POST` | `/api/studio/cases` | 직접 쓴 사건 저장 → 사건 코드 · 수정 키 |
 | `GET` · `PUT` · `DELETE` | `/api/studio/cases/{id}` | 진실 포함 열람 · 수정 · 삭제 (`X-Edit-Key` 헤더 필요) |
+| `GET` | `/api/feedback/form` | 후기 설문 문항 · 선택지 |
+| `POST` | `/api/feedback` | 후기 제출 (IP당 시간당 5회) |
+| `GET` | `/api/admin/feedback` | 후기 통계 · 응답 목록 (`X-Admin-Password` 헤더 필요) |
+| `GET` | `/api/admin/feedback.csv` | 후기 CSV 내려받기 (`X-Admin-Password` 헤더 필요) |
 
 추리를 제출하기 전에는 어떤 게임 응답에도 진실 원장이 담기지 않습니다. (테스트로 검증)
 게임 진행 상황은 서버 메모리에 있어서 서버를 다시 켜면 초기화되고, 사용자 사건은 SQLite에 남습니다.
 
 <br>
 
-## 10. 폴더 구조
+## 11. 폴더 구조
 
 ```text
 re-case/
@@ -267,19 +311,20 @@ re-case/
 │   │   ├── prompts.py       # 판정 · 채점 프롬프트와 JSON 스키마
 │   │   ├── studio.py        # 사건 제작실: 생성 · 검수 프롬프트, 사건 형식 정리 · 검사
 │   │   ├── store.py         # 사용자 사건 저장소 (SQLite, 수정 키 해시)
+│   │   ├── feedback.py      # 후기 설문: 문항 · 입력 검사 · 저장소(TiDB Cloud / SQLite) · 통계 · CSV
 │   │   └── cases.py         # 기본 · 사용자 사건 조회, 공개용 데이터 분리
 │   ├── data/cases.json      # 기본 사건 6개 (공개 정보 + 진실 원장)
-│   ├── tests/               # 가짜 AI로 게임 · 제작실 전체 흐름 테스트
+│   ├── tests/               # 가짜 AI로 게임 · 제작실 · 후기 설문 전체 흐름 테스트
 │   ├── .env.example
 │   ├── requirements.txt
 │   └── requirements-dev.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx          # 화면 전환 · 공유 링크 처리 · 내 사건 목록 · 수사관 이름
+│   │   ├── App.jsx          # 화면 전환(/review · /admin 주소 포함) · 공유 링크 처리 · 내 사건 목록 · 수사관 이름
 │   │   ├── api.js
 │   │   ├── ambience.js      # 빗소리 (음원 파일 없이 브라우저에서 생성)
 │   │   ├── styles.css       # 미제사건 수사본부 디자인 (증거 보드 조명 · 진술 조서 · 손글씨 수첩)
-│   │   └── components/      # Home(증거 보드) · Gate · Play(진술 조서) · CaseFile · Notebook · Accuse · Result · Studio · Chrome(수사관 이름표 · 빗소리)
+│   │   └── components/      # Home(증거 보드) · Gate · Play(진술 조서) · CaseFile · Notebook · Accuse · Result · Studio · Review(후기 설문) · Admin(후기 관리) · Chrome(수사관 이름표 · 빗소리)
 │   └── package.json
 ├── docs/images/
 ├── .gitignore
@@ -288,9 +333,9 @@ re-case/
 
 <br>
 
-## 11. 테스트
+## 12. 테스트
 
-실제 OpenAI를 부르지 않고 가짜 AI를 끼워서 검증합니다. (19개)
+실제 OpenAI를 부르지 않고 가짜 AI를 끼워서 검증합니다. (30개: 게임 · 제작실 19개 + 후기 설문 · 관리자 11개)
 
 ```bash
 cd backend
@@ -298,11 +343,13 @@ venv\Scripts\python -m pip install -r requirements-dev.txt
 venv\Scripts\python -m pytest -q
 ```
 
-검증 항목 : 사건 데이터 무결성(실제 기록 · 가상 이름 표시, 진범 확인 사건 표시 포함) · 추리 제출 전 진실 미노출 · 질문 차감/반복/형식 오류 · 20개 제한 · 채점 · AI 사건 생성 · 생성 형식 오류 재시도 · 공유 링크 플레이 · 수정 키 권한 · 모더레이션 · 실존 인물 차단 · 속도 제한 · API 키 없음/잘못된 키/한도 초과 안내 · 모델 · 파라미터 자동 전환
+검증 항목 : 사건 데이터 무결성(실제 기록 · 가상 이름 표시, 진범 확인 사건 표시 포함) · 추리 제출 전 진실 미노출 · 질문 차감/반복/형식 오류 · 20개 제한 · 채점 · AI 사건 생성 · 생성 형식 오류 재시도 · 공유 링크 플레이 · 수정 키 권한 · 모더레이션 · 실존 인물 차단 · 속도 제한 · API 키 없음/잘못된 키/한도 초과 안내 · 모델 · 파라미터 자동 전환 · 후기 설문 입력 검사 · 관리자 비밀번호 · 비밀번호 연속 실패 잠금 · 설문 횟수 제한 · 허니팟 · CSV 수식 차단 · TiDB 설정 · TiDB 저장/조회
+
+> TiDB 저장/조회 테스트 1개는 테스트용 MySQL 호환 DB가 있을 때만 돕니다. 예: `RECASE_TEST_MYSQL="127.0.0.1:3306:사용자:비밀번호" pytest -q` (없으면 건너뜀)
 
 <br>
 
-## 12. 개발 일정
+## 13. 개발 일정
 
 ![개발 로드맵](docs/images/roadmap.svg)
 

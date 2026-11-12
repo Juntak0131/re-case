@@ -49,6 +49,36 @@ export const api = {
     update: (id, k, c) => request(`/studio/cases/${id}`, { method: 'PUT', body: { case: c }, headers: key(k) }),
     remove: (id, k) => request(`/studio/cases/${id}`, { method: 'DELETE', headers: key(k) }),
   },
+  feedback: {
+    form: () => request('/feedback/form'),
+    submit: (answer) => request('/feedback', { method: 'POST', body: answer }),
+  },
+  admin: {
+    list: (pw) => request('/admin/feedback', { headers: adminKey(pw) }),
+    async csv(pw) {
+      let res
+      try {
+        res = await fetch('/api/admin/feedback.csv', { headers: adminKey(pw) })
+      } catch {
+        throw new ApiError('서버에 연결하지 못했어요. 잠시 뒤에 다시 시도해 주세요.', 0)
+      }
+      if (!res.ok) {
+        let data = null
+        try {
+          data = await res.json()
+        } catch {
+          /* 본문 없음 */
+        }
+        throw new ApiError(data?.detail || `내려받지 못했어요. (${res.status})`, res.status)
+      }
+      return res.blob()
+    },
+  },
+}
+
+// 한글 비밀번호도 헤더에 실을 수 있게 감싸서 보낸다 (서버가 다시 푼다)
+function adminKey(pw) {
+  return { 'X-Admin-Password': encodeURIComponent(pw || '') }
 }
 
 // 브라우저 저장소는 막혀 있을 수 있어서 항상 try/catch로 감싼다.

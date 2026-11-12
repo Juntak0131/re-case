@@ -5,14 +5,23 @@ import Gate from './components/Gate.jsx'
 import Play from './components/Play.jsx'
 import Result from './components/Result.jsx'
 import Studio from './components/Studio.jsx'
+import Review from './components/Review.jsx'
+import Admin from './components/Admin.jsx'
 import { rainOff, rainOn } from './ambience.js'
 
 const SAVED = 'recase.games' // { caseId: gameId } 진행 중인 게임
 const MINE = 'recase.mine' // [{ id, key, title, source, created }] 내가 만든 사건 (수정 키는 이 브라우저에만)
 const DETECTIVE = 'recase.detective' // 담당 수사관 이름
+// 주소로 바로 열 수 있는 화면: /review(후기 설문), /admin(관리자)
+const PATHS = { review: '/review', admin: '/admin' }
+const fromPath = () => {
+  const path = window.location.pathname.replace(/\/+$/, '')
+  return Object.keys(PATHS).find((k) => PATHS[k] === path) || 'home'
+}
 
 export default function App() {
-  const [screen, setScreen] = useState('home')
+  const [screen, setScreen] = useState(fromPath)
+  const [reviewCase, setReviewCase] = useState(null)
   const [cases, setCases] = useState(null)
   const [health, setHealth] = useState(null)
   const [loadError, setLoadError] = useState('')
@@ -95,10 +104,34 @@ export default function App() {
     return () => clearTimeout(t)
   }, [toast])
 
+  // 화면을 바꿀 때 주소도 맞춘다. 뒤로 가기를 누르면 앞 화면으로 돌아간다.
   const go = (next) => {
+    const path = PATHS[next] || '/'
+    if (path !== window.location.pathname) {
+      window.history.replaceState({ screen }, '', window.location.pathname + window.location.search)
+      window.history.pushState({ screen: next }, '', path)
+    } else window.history.replaceState({ screen: next }, '', path)
     setScreen(next)
     window.scrollTo(0, 0)
   }
+
+  useEffect(() => {
+    const onPop = (e) => {
+      setScreen(e.state?.screen || fromPath())
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  const openReview = (caseInfo = null) => {
+    // 직접 만든 사건은 설문에서 '사건 제작실에서 만든 사건'으로 묶는다
+    setReviewCase(caseInfo ? (caseInfo.kind === 'user' ? 'studio' : caseInfo.id) : null)
+    go('review')
+  }
+
+  // 새로고침한 뒤 뒤로 가기로 돌아오면 게임 기록이 없을 수 있다
+  const view = (screen === 'play' && !game) || (screen === 'result' && !game?.result) ? 'home' : screen
 
   const start = async (caseInfo) => {
     setBusy(true)
@@ -152,7 +185,7 @@ export default function App() {
 
   return (
     <>
-      {screen === 'home' && (
+      {view === 'home' && (
         <Home
           {...desk}
           cases={cases}
@@ -166,21 +199,25 @@ export default function App() {
           onOpenCode={openById}
           onStudio={openStudio}
           onForget={removed}
+          onReview={() => openReview()}
           toast={setToast}
         />
       )}
-      {screen === 'play' && game && (
+      {view === 'play' && (
         <Play {...desk} game={game} setGame={setGame} health={health} onHome={() => go('home')} onFinished={finished} />
       )}
-      {screen === 'result' && game?.result && (
+      {view === 'result' && (
         <Result
           detective={detective}
           game={game}
           onHome={() => go('home')}
           onReplay={() => setGate(cases?.find((c) => c.id === game.case.id) || game.case)}
+          onReview={() => openReview(game.case)}
         />
       )}
-      {screen === 'studio' && (
+      {view === 'review' && <Review key={reviewCase || 'none'} detective={detective} preset={reviewCase} onHome={() => go('home')} />}
+      {view === 'admin' && <Admin onHome={() => go('home')} toast={setToast} />}
+      {view === 'studio' && (
         <Studio
           key={`${studio.mode}-${studio.editing?.id || 'new'}`}
           initialMode={studio.mode}
