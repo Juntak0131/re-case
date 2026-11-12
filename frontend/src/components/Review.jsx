@@ -4,8 +4,7 @@ import Logo from './Logo.jsx'
 
 const REVIEWED = 'recase.reviewed' // 이 브라우저에서 후기를 보낸 시각 (중복 안내용)
 
-const empty = (name, preset) => ({
-  name: name || '',
+const empty = (preset) => ({
   freq: '',
   cases: preset ? [preset] : [],
   studio_used: '',
@@ -18,9 +17,6 @@ const empty = (name, preset) => ({
 // 서버와 같은 규칙으로 먼저 검사해서, 보내기 전에 빠진 곳을 알려 준다
 function check(form, a) {
   const issues = {}
-  const name = a.name.replace(/\s+/g, ' ').trim()
-  if (!name) issues.name = '이름이나 닉네임을 적어 주세요.'
-  else if (name.length > form.max_name) issues.name = `이름은 ${form.max_name}자 안으로 적어 주세요.`
   if (!a.freq) issues.freq = '하나를 골라 주세요.'
   if (!a.cases.length) issues.cases = '플레이한 사건을 하나 이상 골라 주세요.'
   if (!a.studio_used) issues.studio_used = '하나를 골라 주세요.'
@@ -82,10 +78,10 @@ function Rating({ q, n, scale, value, error, onPick }) {
   )
 }
 
-export default function Review({ detective, preset, onHome }) {
+export default function Review({ preset, onHome }) {
   const [form, setForm] = useState(null)
   const [loadError, setLoadError] = useState('')
-  const [a, setA] = useState(() => empty(detective, preset))
+  const [a, setA] = useState(() => empty(preset))
   const [issues, setIssues] = useState({})
   const [tried, setTried] = useState(false)
   const [sending, setSending] = useState(false)
@@ -128,7 +124,7 @@ export default function Review({ detective, preset, onHome }) {
     if (a.studio_used !== '예') delete ratings[form.studio_question]
     setSending(true)
     try {
-      await api.feedback.submit({ ...a, name: a.name.trim(), best: a.best.trim(), improve: a.improve.trim(), ratings })
+      await api.feedback.submit({ ...a, best: a.best.trim(), improve: a.improve.trim(), ratings })
       store.set(REVIEWED, Date.now())
       setDone(true)
       window.scrollTo(0, 0)
@@ -165,7 +161,7 @@ export default function Review({ detective, preset, onHome }) {
             </span>
             <p className="modal-kicker">수사 후기 · 접수 완료</p>
             <h1>후기를 보냈어요</h1>
-            <p>{a.name.trim()} 님, 남겨 주신 의견은 다음 사건과 판정관을 고치는 데 씁니다. 참여해 주셔서 고맙습니다.</p>
+            <p>남겨 주신 의견은 다음 사건과 판정관을 고치는 데 씁니다. 참여해 주셔서 고맙습니다.</p>
             <button className="btn red" onClick={onHome}>
               사건 목록으로
             </button>
@@ -173,7 +169,7 @@ export default function Review({ detective, preset, onHome }) {
         ) : (
           <>
             <h1 className="studio-title">수사 후기</h1>
-            <p className="studio-lead">RE:CASE를 해 본 느낌을 알려 주세요. 2~3분이면 끝나요. 로그인 없이 이름이나 닉네임만 적으면 됩니다.</p>
+            <p className="studio-lead">RE:CASE를 해 본 느낌을 알려 주세요. 2~3분이면 끝나요. 로그인도 이름도 없이 익명으로 답해요.</p>
             {reviewedAt && (
               <p className="banner rv-note">이 브라우저에서 이미 후기를 보냈어요. 다시 보내면 한 번 더 기록돼요.</p>
             )}
@@ -191,25 +187,7 @@ export default function Review({ detective, preset, onHome }) {
             {form && (
               <form className="rv-sheet sheet paper" onSubmit={submit} noValidate>
                 <section className="rv-part">
-                  <h2>응답자</h2>
-                  <div className={`field rv-name ${issues.name ? 'bad' : ''}`} id="rv-name">
-                    <label htmlFor="rv-name-input">
-                      <span>이름 또는 닉네임</span>
-                    </label>
-                    <input
-                      id="rv-name-input"
-                      value={a.name}
-                      maxLength={form.max_name + 5}
-                      onChange={(e) => set({ name: e.target.value })}
-                      placeholder="예) 한준탁"
-                      autoComplete="nickname"
-                    />
-                    {issues.name ? (
-                      <p className="rv-error">{issues.name}</p>
-                    ) : (
-                      <p className="rv-help">응답 확인용으로만 쓰고 화면에 공개하지 않아요.</p>
-                    )}
-                  </div>
+                  <h2>플레이 정보</h2>
                   <div className="rv-hp" aria-hidden="true">
                     <label>
                       홈페이지

@@ -17,7 +17,6 @@ PW = "test-admin-pw"
 
 def answer(**over):
     data = {
-        "name": "김민지",
         "freq": "가끔 즐긴다",
         "cases": ["bermuda", "zodiac"],
         "studio_used": "아니오",
@@ -50,7 +49,7 @@ def test_form_matches_google_form(client):
 
 def test_submit_and_admin_summary(client, fb):
     assert client.post("/api/feedback", json=answer()).json()["ok"]
-    r2 = answer(name="  박 서준  ", studio_used="예", cases=["studio", "bermuda"],
+    r2 = answer(name="보내도 저장 안 됨", best="두 번째 응답", studio_used="예", cases=["studio", "bermuda"],
                 ratings={**{q: 5 for q in feedback.QIDS}, "q12": 3})
     assert client.post("/api/feedback", json=r2).status_code == 200
 
@@ -63,14 +62,14 @@ def test_submit_and_admin_summary(client, fb):
     assert {c["label"]: c["n"] for c in s["cases"]}["버뮤다 삼각지대"] == 2
     assert {c["label"]: c["n"] for c in s["studio_used"]} == {"예": 1, "아니오": 1}
     newest = data["responses"][0]
-    assert newest["name"] == "박 서준" and newest["cases"] == ["버뮤다 삼각지대", "사건 제작실에서 만든 사건"]
+    assert newest["best"] == "두 번째 응답" and newest["cases"] == ["버뮤다 삼각지대", "사건 제작실에서 만든 사건"]
+    assert newest["no"] == 2 and data["responses"][1]["no"] == 1
+    assert "name" not in newest  # 익명 설문: 이름을 보내도 저장하지 않는다
     assert data["responses"][1]["q11"] is None and data["responses"][1]["avg"] == 4.0
 
 
 def test_validation(client, fb):
     bad = [
-        answer(name=""),
-        answer(name="가" * 21),
         answer(freq="매일"),
         answer(cases=[]),
         answer(cases=["nope"]),
@@ -110,20 +109,20 @@ def test_admin_locks_after_failed_logins(client, fb):
 
 def test_rate_limit_and_honeypot(client, fb):
     for i in range(5):
-        assert client.post("/api/feedback", json=answer(name=f"사람{i}")).status_code == 200
-    r = client.post("/api/feedback", json=answer(name="여섯째"))
+        assert client.post("/api/feedback", json=answer(best=f"사람{i}")).status_code == 200
+    r = client.post("/api/feedback", json=answer(best="여섯째"))
     assert r.status_code == 429 and "5번" in r.json()["detail"]
     assert client.post("/api/feedback", json=answer(website="http://spam")).json()["ok"]
     assert admin(client).json()["summary"]["total"] == 5
 
 
 def test_csv_blocks_spreadsheet_formulas(client, fb):
-    client.post("/api/feedback", json=answer(name="=HYPERLINK(1)", improve="+사실은 좋았음"))
+    client.post("/api/feedback", json=answer(best="=HYPERLINK(1)", improve="+사실은 좋았음"))
     r = client.get("/api/admin/feedback.csv", headers={"X-Admin-Password": PW})
     assert r.status_code == 200 and r.text.startswith("﻿")
     rows = list(csv.reader(io.StringIO(r.text.lstrip("﻿"))))
-    assert rows[0][0] == "제출 시각" and len(rows) == 2
-    assert rows[1][1] == "'=HYPERLINK(1)" and rows[1][-1] == "'+사실은 좋았음"
+    assert rows[0][:2] == ["번호", "제출 시각"] and "이름" not in rows[0] and len(rows) == 2
+    assert rows[1][0] == "1" and rows[1][-2] == "'=HYPERLINK(1)" and rows[1][-1] == "'+사실은 좋았음"
 
 
 def test_tidb_settings_from_env(monkeypatch, tmp_path):
@@ -181,14 +180,40 @@ def test_tidb_store_roundtrip(client, fake, monkeypatch):
     conn.close()
     feedback.TiDBStore._ready.clear()
 
-    assert client.post("/api/feedback", json=answer(name="첫째")).status_code == 200
-    assert client.post("/api/feedback", json=answer(name="둘째", studio_used="예", cases=["studio"],
-                                                     best="따옴표 ' \" 와 이모지 🔍 도 저장")).status_code == 200
+    assert client.post("/api/feedback", json=answer(best="첫째")).status_code == 200
+    assert client.post("/api/feedback", json=answer(studio_used="예", cases=["studio"],
+                                                     best="둘째: 따옴표 ' \" 와 이모지 🔍 도 저장")).status_code == 200
     data = admin(client).json()
     assert data["store"] == "tidb" and data["summary"]["total"] == 2
     newest = data["responses"][0]
-    assert newest["name"] == "둘째" and newest["cases"] == ["사건 제작실에서 만든 사건"]
-    assert newest["best"] == "따옴표 ' \" 와 이모지 🔍 도 저장" and newest["q11"] == 4
+    assert newest["no"] == 2 and newest["cases"] == ["사건 제작실에서 만든 사건"]
+    assert newest["best"] == "둘째: 따옴표 ' \" 와 이모지 🔍 도 저장" and newest["q11"] == 4
     assert data["responses"][1]["q11"] is None and len(newest["submitted_at"]) == 19
     csv_text = client.get("/api/admin/feedback.csv", headers={"X-Admin-Password": PW}).text
     assert "첫째" in csv_text and "둘째" in csv_text
+
+
+@pytest.mark.skipif(not MYSQL, reason="MySQL 호환 테스트 DB가 없음")
+def test_tidb_table_from_first_version_still_works(client, fake, monkeypatch):
+    """이름 칸이 있던 첫 버전으로 표를 이미 만들었어도 그대로 저장된다."""
+    host, port, user, password = MYSQL.split(":", 3)
+    db = "recase_old"
+    for k, v in (("TIDB_HOST", host), ("TIDB_PORT", port), ("TIDB_USER", user),
+                 ("TIDB_PASSWORD", password), ("TIDB_DB_NAME", db)):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("ADMIN_PASSWORD", PW)
+    store = feedback.TiDBStore.from_env()
+    conn = store._connect(with_db=False)
+    ratings = ", ".join(f"{q} TINYINT NULL" for q in feedback.QIDS)
+    with conn.cursor() as cur:
+        cur.execute(f"DROP DATABASE IF EXISTS `{db}`")
+        cur.execute(f"CREATE DATABASE `{db}`")
+        cur.execute(f"""CREATE TABLE `{db}`.feedback (id VARCHAR(16) NOT NULL PRIMARY KEY, submitted_at DATETIME NOT NULL,
+            name VARCHAR(40) NOT NULL, freq VARCHAR(20) NOT NULL, cases TEXT NOT NULL, studio_used VARCHAR(8) NOT NULL,
+            {ratings}, best TEXT NOT NULL, improve TEXT NOT NULL, created_at DATETIME(6) NOT NULL) DEFAULT CHARSET=utf8mb4""")
+    conn.close()
+    feedback.TiDBStore._ready.clear()
+
+    assert client.post("/api/feedback", json=answer()).status_code == 200
+    data = admin(client).json()
+    assert data["summary"]["total"] == 1 and "name" not in data["responses"][0]

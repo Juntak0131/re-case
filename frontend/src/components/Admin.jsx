@@ -98,11 +98,11 @@ function Row({ r, questions, open, fresh, onToggle }) {
   return (
     <>
       <tr className={`${open ? 'open' : ''} ${fresh ? 'fresh' : ''}`} onClick={onToggle}>
-        <td className="ad-time">{r.submitted_at.slice(0, 16)}</td>
         <td className="ad-name">
-          {r.name}
+          {r.no}번
           {fresh && <span className="ad-new">새 응답</span>}
         </td>
+        <td className="ad-time">{r.submitted_at.slice(0, 16)}</td>
         <td className="ad-cases">{r.cases.join(', ')}</td>
         <td>{r.studio_used}</td>
         <td className="ad-num">{fmt(r.avg)}</td>
@@ -416,7 +416,7 @@ export default function Admin({ onHome, toast }) {
                     </p>
                   )}
                   <small>
-                    {r.name} · {day(r.submitted_at)}
+                    {r.no}번 응답 · {day(r.submitted_at)}
                   </small>
                 </li>
               ))}
@@ -433,8 +433,8 @@ export default function Admin({ onHome, toast }) {
               <table className="ad-table">
                 <thead>
                   <tr>
+                    <th>번호</th>
                     <th>제출 시각</th>
-                    <th>이름</th>
                     <th>플레이한 사건</th>
                     <th>제작실</th>
                     <th className="ad-num">평균</th>

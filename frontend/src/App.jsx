@@ -215,7 +215,7 @@ export default function App() {
           onReview={() => openReview(game.case)}
         />
       )}
-      {view === 'review' && <Review key={reviewCase || 'none'} detective={detective} preset={reviewCase} onHome={() => go('home')} />}
+      {view === 'review' && <Review key={reviewCase || 'none'} preset={reviewCase} onHome={() => go('home')} />}
       {view === 'admin' && <Admin onHome={() => go('home')} toast={setToast} />}
       {view === 'studio' && (
         <Studio

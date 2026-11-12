@@ -368,7 +368,8 @@ def _admin(request: Request, password: Optional[str]) -> None:
 def admin_feedback(request: Request, x_admin_password: Optional[str] = Header(None), fb_store=Depends(feedback.get_store)):
     _admin(request, x_admin_password)
     rows = fb_store.list()
-    responses = [{**r, "avg": feedback.response_avg(r)} for r in reversed(rows)]  # 저장소는 들어온 순서대로 준다
+    # 저장소는 들어온 순서대로 준다. 번호는 먼저 들어온 응답부터 1번.
+    responses = [{**r, "no": i + 1, "avg": feedback.response_avg(r)} for i, r in enumerate(rows)][::-1]
     return {"store": fb_store.kind, "summary": feedback.summarize(rows), "responses": responses}
 
 

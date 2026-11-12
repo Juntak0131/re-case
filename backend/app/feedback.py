@@ -46,10 +46,9 @@ FREQ = ["자주 즐긴다", "가끔 즐긴다", "거의 안 즐긴다"]
 YES_NO = ["예", "아니오"]
 STUDIO_CASE = ("studio", "사건 제작실에서 만든 사건")
 SCALE = ["전혀 그렇지 않다", "그렇지 않다", "보통이다", "그렇다", "매우 그렇다"]
-MAX_NAME = 20
 MAX_TEXT = 500
-# 저장하는 칸의 순서 (DB 열 순서와 같다)
-FIELDS = ["id", "submitted_at", "name", "freq", "cases", "studio_used", *QIDS, "best", "improve"]
+# 저장하는 칸의 순서. 설문은 익명이라 이름 칸이 없다.
+FIELDS = ["id", "submitted_at", "freq", "cases", "studio_used", *QIDS, "best", "improve"]
 
 
 class FeedbackError(Exception):
@@ -74,7 +73,6 @@ def form() -> dict:
         "yes_no": YES_NO,
         "cases": case_choices(),
         "scale": SCALE,
-        "max_name": MAX_NAME,
         "max_text": MAX_TEXT,
     }
 
@@ -82,12 +80,6 @@ def form() -> dict:
 def validate(data: dict) -> dict:
     """제출된 설문을 검사해 저장할 한 줄(record)로 만든다. 문제가 있으면 FeedbackError(422)."""
     issues = []
-    name = " ".join(str(data.get("name") or "").split())
-    if not name:
-        issues.append({"field": "name", "message": "이름이나 닉네임을 적어 주세요."})
-    elif len(name) > MAX_NAME:
-        issues.append({"field": "name", "message": f"이름은 {MAX_NAME}자 안으로 적어 주세요."})
-
     freq = data.get("freq")
     if freq not in FREQ:
         issues.append({"field": "freq", "message": "추리물을 얼마나 즐기는지 골라 주세요."})
@@ -138,7 +130,6 @@ def validate(data: dict) -> dict:
     return {
         "id": secrets.token_hex(5),
         "submitted_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
-        "name": name,
         "freq": freq,
         "cases": [titles[p] for p in sorted(set(picked), key=order.index)],
         "studio_used": studio_used,
@@ -170,7 +161,7 @@ def _from_row(row: dict) -> dict:
             out[q] = None
     if isinstance(out.get("submitted_at"), datetime):
         out["submitted_at"] = out["submitted_at"].strftime("%Y-%m-%d %H:%M:%S")
-    for f in ("id", "submitted_at", "name", "freq", "studio_used", "best", "improve"):
+    for f in ("id", "submitted_at", "freq", "studio_used", "best", "improve"):
         out[f] = "" if out.get(f) is None else str(out[f])
     return out
 
@@ -286,7 +277,7 @@ class TiDBStore:
                     cur.execute(f"""CREATE TABLE IF NOT EXISTS feedback (
   id VARCHAR(16) NOT NULL PRIMARY KEY,
   submitted_at DATETIME NOT NULL,
-  name VARCHAR(40) NOT NULL,
+  name VARCHAR(40) NOT NULL DEFAULT '' COMMENT '예전 버전 호환용. 익명 설문이라 비워 둔다',
   freq VARCHAR(20) NOT NULL,
   cases TEXT NOT NULL,
   studio_used VARCHAR(8) NOT NULL,
@@ -318,8 +309,9 @@ class TiDBStore:
             conn.close()
 
     def add(self, record: dict) -> None:
-        cols = [f for f in FIELDS] + ["created_at"]
-        values = {**record, "cases": json.dumps(record["cases"], ensure_ascii=False),
+        # name은 이름 칸이 있던 첫 버전으로 이미 만든 표와 맞추려고 빈 값으로 넣는다
+        cols = [*FIELDS, "name", "created_at"]
+        values = {**record, "name": "", "cases": json.dumps(record["cases"], ensure_ascii=False),
                   "created_at": datetime.now(KST).replace(tzinfo=None)}
         self._run(f"INSERT INTO feedback ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))})",
                   [values[c] for c in cols])
@@ -391,10 +383,10 @@ def _cell(v) -> str:
 def to_csv(rows: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["제출 시각", "이름", "추리물 즐김", "플레이한 사건", "사건 제작실 사용",
+    w.writerow(["번호", "제출 시각", "추리물 즐김", "플레이한 사건", "사건 제작실 사용",
                 *[f"{i + 1}. {t}" for i, (_, t, _) in enumerate(QUESTIONS)], "평균", "좋았던 점", "고칠 점"])
-    for r in rows:
-        w.writerow([_cell(r["submitted_at"]), _cell(r["name"]), _cell(r["freq"]), _cell(", ".join(r["cases"])),
+    for no, r in enumerate(rows, 1):
+        w.writerow([no, _cell(r["submitted_at"]), _cell(r["freq"]), _cell(", ".join(r["cases"])),
                     _cell(r["studio_used"]), *["" if r[q] is None else r[q] for q in QIDS],
                     response_avg(r) or "", _cell(r["best"]), _cell(r["improve"])])
     return "﻿" + buf.getvalue()  # 엑셀에서 한글이 깨지지 않게 BOM을 붙인다

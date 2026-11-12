@@ -3301,17 +3301,10 @@ button.cta-card:hover {
   margin: -8px 0 6px;
 }
 
-.rv-name {
-  max-width: 340px;
-  margin-bottom: 18px;
-}
-
-.rv-name label,
 .rv-sheet .field label {
   display: block;
 }
 
-.rv-name label > span,
 .rv-sheet .field label > span {
   font-size: 13.5px;
   font-weight: 800;
@@ -4307,10 +4300,10 @@ button.cta-card:hover {
   .ad-table tbody tr:not(.ad-detail) td {
     border: 0;
     padding: 0;
-    background: none;
+    background: none !important;
   }
   .ad-table .ad-time {
-    grid-column: 1 / -1;
+    text-align: right;
     font-size: 12.5px;
   }
   .ad-table .ad-cases {
